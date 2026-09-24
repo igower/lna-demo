@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Files · Local Network Access demo</title>
+<style>
+    body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f5f6f8; color: #1d1d1f; }
+    header { background: #0061d5; color: white; padding: 14px 24px; font-weight: 600; font-size: 18px; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .card { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+    .row { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #eee; }
+    .row:last-child { border-bottom: 0; }
+    button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #0061d5; background: white; color: #0061d5; cursor: pointer; }
+    button:disabled { border-color: #ccc; color: #aaa; cursor: default; }
+    .status { display: flex; gap: 24px; padding: 14px 18px; }
+    .status b { display: block; font-size: 12px; text-transform: uppercase; color: #6e6e73; letter-spacing: .04em; }
+    #log { font: 12px/1.6 ui-monospace, Menlo, monospace; padding: 12px 18px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+    h2 { font-size: 13px; text-transform: uppercase; color: #6e6e73; letter-spacing: .04em; margin: 24px 0 8px; }
+</style>
+</head>
+<body>
+<header>Files</header>
+<main>
+    <div class="card status">
+        <div><b>Desktop helper</b><span id="helper">checking…</span></div>
+        <div><b>Loopback permission</b><span id="permission">…</span></div>
+    </div>
+
+    <div class="card" id="files"></div>
+
+    <h2>What this page can observe</h2>
+    <div class="card"><div id="log"></div></div>
+</main>
+<script>
+const HELPER = 'http://127.0.0.1:17300';
+const FILES = ['Q4 Roadmap.txt', 'Launch Notes.rtf'];
+
+const log = (message) => {
+    const line = `${new Date().toLocaleTimeString()}  ${message}\n`;
+    document.getElementById('log').textContent += line;
+};
+
+// The only thing that makes this reach the helper from an https page: declaring the target as
+// loopback exempts the plain-http request from mixed-content blocking, and puts it behind the
+// Local Network Access permission instead.
+async function callHelper(path, method = 'GET') {
+    const started = performance.now();
+    try {
+        const response = await fetch(HELPER + path, {
+            method,
+            targetAddressSpace: 'loopback',
+            signal: AbortSignal.timeout(5000),
+        });
+        const body = await response.json();
+        log(`${method} ${path} -> ${response.status} ${JSON.stringify(body)} (${Math.round(performance.now() - started)} ms)`);
+        return body;
+    } catch (error) {
+        log(`${method} ${path} -> ${error.name}: ${error.message} (${Math.round(performance.now() - started)} ms)`);
+        throw error;
+    }
+}
+
+async function checkHelper() {
+    const helper = document.getElementById('helper');
+    try {
+        const status = await callHelper('/status');
+        helper.textContent = `running (${status.version})`;
+        setOpenButtonsEnabled(true);
+    } catch {
+        helper.textContent = 'not reachable';
+        setOpenButtonsEnabled(false);
+    }
+}
+
+function setOpenButtonsEnabled(enabled) {
+    document.querySelectorAll('#files button').forEach((button) => { button.disabled = !enabled; });
+}
+
+async function watchPermission() {
+    const element = document.getElementById('permission');
+    try {
+        const status = await navigator.permissions.query({ name: 'loopback-network' });
+        const show = () => { element.textContent = status.state; log(`permissions.query(loopback-network) = ${status.state}`); };
+        status.onchange = show;
+        show();
+    } catch (error) {
+        element.textContent = 'unsupported';
+        log(`permissions.query threw ${error.name}`);
+    }
+}
+
+for (const name of FILES) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<span>📄 ${name}</span><button disabled>Open in desktop app</button>`;
+    row.querySelector('button').onclick = () => callHelper(`/open?file=${encodeURIComponent(name)}`, 'POST').catch(() => {});
+    document.getElementById('files').append(row);
+}
+
+watchPermission();
+checkHelper();
+</script>
+</body>
+</html>
