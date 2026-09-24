@@ -20,11 +20,14 @@ No site quirks, no mixed-content exemption beyond what `targetAddressSpace` alre
 
 | Step | Page | Helper terminal |
 |---|---|---|
-| Load the page | Prompt appears: this site wants to reach apps on this device | `GET /status` already logged |
-| Deny | Helper "not reachable"; permission `denied`; the log shows a generic `TypeError` | the request still arrived |
-| Reset the permission, reload, Allow | Helper "running"; permission `granted` | `GET /status` |
-| Click "Open in desktop app" | `POST /open` succeeds | `POST /open?...`, and the file opens in TextEdit |
-| Reload | No prompt; the grant is remembered | `GET /status` |
+| Load the page | Nothing is sent; the permission reads `prompt` | silent |
+| Click "Open in desktop app" | `GET /status` goes out and the prompt appears | `GET /status` already logged |
+| Deny | Helper "not reachable"; permission `denied`; the log shows a generic `TypeError`. The file does not open | the status check still arrived |
+| Reset the permission, reload, click, Allow | Helper "running", then `POST /open` succeeds | `GET /status`, `POST /open?...`, and the file opens in TextEdit |
+| Reload | Permission already `granted`, so the page checks the helper on its own and no prompt appears | `GET /status` |
+
+The page never sends `/open` as its first request. Enforcement currently happens once the helper has
+answered, so a first request that opened the file would already have done so before the prompt.
 
 The "What this page can observe" panel is the point to linger on: after a Deny, the page sees the same
 `TypeError` it would see with nothing installed, plus a `denied` permission state. The one thing it can

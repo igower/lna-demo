@@ -12,7 +12,6 @@
     .row { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #eee; }
     .row:last-child { border-bottom: 0; }
     button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #0061d5; background: white; color: #0061d5; cursor: pointer; }
-    button:disabled { border-color: #ccc; color: #aaa; cursor: default; }
     .status { display: flex; gap: 24px; padding: 14px 18px; }
     .status b { display: block; font-size: 12px; text-transform: uppercase; color: #6e6e73; letter-spacing: .04em; }
     #log { font: 12px/1.6 ui-monospace, Menlo, monospace; padding: 12px 18px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
@@ -23,7 +22,7 @@
 <header>Files</header>
 <main>
     <div class="card status">
-        <div><b>Desktop helper</b><span id="helper">checking…</span></div>
+        <div><b>Desktop helper</b><span id="helper">not checked yet</span></div>
         <div><b>Loopback permission</b><span id="permission">…</span></div>
     </div>
 
@@ -66,15 +65,19 @@ async function checkHelper() {
     try {
         const status = await callHelper('/status');
         helper.textContent = `running (${status.version})`;
-        setOpenButtonsEnabled(true);
+        return true;
     } catch {
         helper.textContent = 'not reachable';
-        setOpenButtonsEnabled(false);
+        return false;
     }
 }
 
-function setOpenButtonsEnabled(enabled) {
-    document.querySelectorAll('#files button').forEach((button) => { button.disabled = !enabled; });
+// The harmless status check goes first, and is what raises the permission prompt. Enforcement
+// currently happens once the helper has answered, so if /open were the first request, the helper
+// would already have opened the file by the time the user saw the prompt, even if they then denied it.
+async function openInDesktopApp(name) {
+    if (await checkHelper())
+        await callHelper(`/open?file=${encodeURIComponent(name)}`, 'POST').catch(() => {});
 }
 
 async function watchPermission() {
@@ -84,6 +87,9 @@ async function watchPermission() {
         const show = () => { element.textContent = status.state; log(`permissions.query(loopback-network) = ${status.state}`); };
         status.onchange = show;
         show();
+        // Already granted means the check cannot prompt, so it is safe to do without a click.
+        if (status.state === 'granted')
+            checkHelper();
     } catch (error) {
         element.textContent = 'unsupported';
         log(`permissions.query threw ${error.name}`);
@@ -93,13 +99,12 @@ async function watchPermission() {
 for (const name of FILES) {
     const row = document.createElement('div');
     row.className = 'row';
-    row.innerHTML = `<span>📄 ${name}</span><button disabled>Open in desktop app</button>`;
-    row.querySelector('button').onclick = () => callHelper(`/open?file=${encodeURIComponent(name)}`, 'POST').catch(() => {});
+    row.innerHTML = `<span>📄 ${name}</span><button>Open in desktop app</button>`;
+    row.querySelector('button').onclick = () => openInDesktopApp(name);
     document.getElementById('files').append(row);
 }
 
 watchPermission();
-checkHelper();
 </script>
 </body>
 </html>
